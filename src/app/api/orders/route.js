@@ -13,6 +13,7 @@ function getSupabaseForRequest(request) {
   if (!url || !key) return { error: "Supabase is not configured.", status: 503 };
 
   return {
+    token,
     supabase: createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
@@ -24,7 +25,7 @@ export async function GET(request) {
   const setup = getSupabaseForRequest(request);
   if (setup.error) return NextResponse.json({ error: setup.error }, { status: setup.status });
 
-  const { data: { user }, error: authError } = await setup.supabase.auth.getUser();
+  const { data: { user }, error: authError } = await setup.supabase.auth.getUser(setup.token);
   if (authError || !user) return NextResponse.json({ error: "Your session is invalid. Please sign in again." }, { status: 401 });
 
   const { data, error } = await setup.supabase
