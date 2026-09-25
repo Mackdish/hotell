@@ -113,6 +113,33 @@ create table if not exists public.app_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Seed the pickup points already shown in the customer UI.
+insert into public.pickup_locations (name, description, sort_order)
+select seed.name, seed.description, seed.sort_order
+from (values
+  ('Main cafeteria counter', 'Ground floor, main building', 1),
+  ('Block B pickup point', 'Near lecture halls', 2),
+  ('Library café', 'Ground floor, library building', 3)
+) as seed(name, description, sort_order)
+where not exists (
+  select 1 from public.pickup_locations existing where existing.name = seed.name
+);
+
+-- Seed the existing starter menu; admins can maintain it from the dashboard in a later phase.
+insert into public.menu_items (name, description, category, image_url, price, is_available, prep_minutes, sort_order)
+select seed.name, seed.description, seed.category, seed.image_url, seed.price, seed.is_available, seed.prep_minutes, seed.sort_order
+from (values
+  ('Chicken & coconut rice', 'Grilled chicken, fragrant rice, kachumbari', 'Popular', 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=900&q=85', 180.00, true, 15, 1),
+  ('Beef stew & ugali', 'Slow-cooked beef, sukuma wiki, tomato relish', 'Local favourite', 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=900&q=85', 150.00, true, 20, 2),
+  ('Beans & chapati', 'Creamy coconut beans, two soft chapatis', 'Plant-based', 'https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=900&q=85', 120.00, true, 12, 3),
+  ('Pilau special', 'Spiced rice, beef kofta, kachumbari', 'Premium', 'https://images.unsplash.com/photo-1633945274405-b6c8069047b0?auto=format&fit=crop&w=900&q=85', 200.00, true, 18, 4),
+  ('Vegetable curry', 'Mixed vegetables, coconut milk, rice', 'Plant-based', 'https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?auto=format&fit=crop&w=900&q=85', 130.00, true, 15, 5),
+  ('Chicken wings', 'Crispy wings, fries, coleslaw', 'Popular', 'https://images.unsplash.com/photo-1567620832903-9fc6debc209f?auto=format&fit=crop&w=900&q=85', 220.00, false, 20, 6)
+) as seed(name, description, category, image_url, price, is_available, prep_minutes, sort_order)
+where not exists (
+  select 1 from public.menu_items existing where existing.name = seed.name
+);
+
 insert into public.app_settings (key, value, description)
 values
   ('ordering_cutoff_time', '"09:00"', 'Daily cutoff in Africa/Nairobi local time.'),
@@ -150,6 +177,30 @@ as $$
     where id = auth.uid() and role in ('admin', 'kitchen', 'cashier')
   );
 $$;
+
+-- Create a profile automatically when a new Supabase Auth user signs up.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $
+begin
+  insert into public.profiles (id, full_name, phone)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name', ''),
+    new.raw_user_meta_data ->> 'phone'
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
 
 alter table public.profiles enable row level security;
 alter table public.menu_items enable row level security;
