@@ -220,7 +220,7 @@ function OrderTable({ orders, onStatus }) {
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <div><p className="text-xs text-gray-400">Customer</p><p className="mt-1 text-sm font-semibold">{order.customerName || order.customer?.name || "Customer details pending"}</p><p className="text-xs text-gray-500">{order.customerPhone || order.customer?.phone || ""}</p></div>
-              <div><p className="text-xs text-gray-400">Pickup time</p><p className="mt-1 text-sm font-semibold">{formatDate(order.pickupTime || order.pickupDateTime || order.pickupLocation)}</p></div>
+              <div><p className="text-xs text-gray-400">Pickup time</p><p className="mt-1 text-sm font-semibold">{formatDate(order.pickupDateTime || (order.pickupDate && order.pickupTime ? order.pickupDate + "T" + order.pickupTime + ":00+03:00" : order.pickupTime || order.pickupLocation))}</p></div>
               <div><p className="text-xs text-gray-400">Items</p><p className="mt-1 text-sm font-semibold">{(order.items || []).map((item) => `${item.quantity}× ${item.mealName || item.name || "Meal"}`).join(", ") || "—"}</p></div>
               <div><p className="text-xs text-gray-400">Total / payment</p><p className="mt-1 text-sm font-semibold">KSh {Number(order.total || 0).toLocaleString("en-KE")}</p><p className="text-xs text-gray-500">{order.paymentStatus || order.paymentMethod || "Payment status unknown"}</p></div>
             </div>
