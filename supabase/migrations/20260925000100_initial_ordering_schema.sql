@@ -161,9 +161,9 @@ language sql
 stable
 security definer
 set search_path = public
-as $
+as $$
   select role from public.profiles where id = auth.uid();
-$;
+$$;
 
 create or replace function public.is_staff()
 returns boolean
@@ -184,7 +184,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = public
-as $
+as $$
 begin
   insert into public.profiles (id, full_name, phone)
   values (
@@ -195,7 +195,7 @@ begin
   on conflict (id) do nothing;
   return new;
 end;
-$;
+$$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
