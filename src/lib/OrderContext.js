@@ -159,7 +159,7 @@ export const OrderProvider = ({ children }) => {
 
   const getBasketItems = () =>
     Object.entries(basket).map(([mealId, quantity]) => ({
-      meal: meals.find((meal) => meal.id === Number(mealId)),
+      meal: menuItems.find((meal) => String(meal.id) === mealId || meal.id === Number(mealId)) || meals.find((meal) => meal.id === Number(mealId)),
       quantity,
     })).filter((item) => item.meal);
 
