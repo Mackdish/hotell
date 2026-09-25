@@ -38,6 +38,7 @@ function mapDatabaseOrder(row) {
 
 export const OrderProvider = ({ children }) => {
   const [basket, setBasket] = useState({});
+  const [menuItems, setMenuItems] = useState(meals);
   const [orders, setOrders] = useState([]);
   const [currentOrder, setCurrentOrder] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -58,6 +59,27 @@ export const OrderProvider = ({ children }) => {
 
       try {
         const supabase = getSupabaseBrowserClient();
+        const { data: menuData, error: menuError } = await supabase
+          .from("menu_items")
+          .select("id, name, description, category, image_url, price, is_available, prep_minutes, sort_order")
+          .eq("is_available", true)
+          .order("sort_order", { ascending: true });
+        if (!menuError && Array.isArray(menuData) && menuData.length) {
+          setMenuItems(menuData.map((item) => ({
+            id: item.id,
+            name: item.name,
+            detail: item.description,
+            description: item.description,
+            category: item.category,
+            image: item.image_url,
+            price: Number(item.price),
+            available: item.is_available,
+            prepTime: `${item.prep_minutes} min`,
+            accent: /plant|veget/i.test(item.category) ? "green" : /premium/i.test(item.category) ? "gold" : "coral",
+          })));
+        } else if (menuError) {
+          console.warn("Could not load menu from Supabase; using demo menu:", menuError.message);
+        }
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
           const response = await fetch("/api/orders", {
@@ -198,7 +220,7 @@ export const OrderProvider = ({ children }) => {
   );
 
   const value = {
-    basket, orders, currentOrder, isLoaded, addToBasket, removeFromBasket,
+    basket, orders, currentOrder, isLoaded, menuItems, addToBasket, removeFromBasket,
     updateBasketQuantity, clearBasket, getBasketItems, getBasketTotal,
     getBasketCount, placeOrder, updateOrderStatus, getOrderById,
     getActiveOrders, getPastOrders,
