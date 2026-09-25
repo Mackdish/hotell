@@ -68,7 +68,7 @@ begin
     raise exception 'Choose an active pickup location.';
   end if;
 
-  if p_payment_method not in ('mpesa', 'pickup') then
+  if p_payment_method is null or p_payment_method not in ('mpesa', 'pickup') then
     raise exception 'Choose a supported payment method.';
   end if;
   v_payment_method := case when p_payment_method = 'pickup' then 'cash' else p_payment_method end;
