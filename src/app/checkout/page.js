@@ -23,7 +23,7 @@ function getNairobiSchedule() {
   const minDate = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit",
   }).format(earliest);
-  return { today, minDate, afterCutoff };
+  return { today, minDate, afterCutoff, currentTime: values.hour + ":" + values.minute };
 }
 
 export default function CheckoutPage() {
@@ -60,6 +60,10 @@ export default function CheckoutPage() {
     }
     if (!pickupTime) {
       alert("Please select a pickup time.");
+      return;
+    }
+    if (pickupDate === schedule.today && pickupTime <= schedule.currentTime) {
+      alert("Please choose a pickup time later than the current time in Kenya.");
       return;
     }
 
