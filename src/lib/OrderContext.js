@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect } from "react";
 import { meals } from "@/data/meals";
-import { createOrder, orderStatuses, pickupLocations } from "@/data/orders";
+import { orderStatuses, pickupLocations } from "@/data/orders";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const OrderContext = createContext();
