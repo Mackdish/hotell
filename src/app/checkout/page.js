@@ -2,13 +2,29 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, MapPin, CreditCard, Smartphone } from "lucide-react";
+import { ArrowRight, MapPin, CreditCard, Smartphone, Clock3, CalendarDays } from "lucide-react";
 import { useOrder } from "@/lib/OrderContext";
 import { pickupLocations, paymentMethods } from "@/data/orders";
 import { defaultUser } from "@/data/user";
 import Sidebar from "@/app/components/navigation/Sidebar";
 import MobileNav from "@/app/components/navigation/MobileNav";
 import Topbar from "@/app/components/navigation/Topbar";
+
+function getNairobiSchedule() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const today = values.year + "-" + values.month + "-" + values.day;
+  const afterCutoff = values.hour >= "09";
+  const earliest = new Date(today + "T00:00:00+03:00");
+  if (afterCutoff) earliest.setUTCDate(earliest.getUTCDate() + 1);
+  const minDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(earliest);
+  return { today, minDate, afterCutoff, currentTime: values.hour + ":" + values.minute };
+}
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -23,6 +39,8 @@ export default function CheckoutPage() {
   
   const [selectedPickup, setSelectedPickup] = useState(defaultUser.defaultPickupLocation);
   const [selectedPayment, setSelectedPayment] = useState(defaultUser.defaultPaymentMethod);
+  const [pickupDate, setPickupDate] = useState(() => getNairobiSchedule().minDate);
+  const [pickupTime, setPickupTime] = useState("12:30");
   const [notes, setNotes] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
@@ -34,21 +52,37 @@ export default function CheckoutPage() {
 
   const handlePlaceOrder = async () => {
     if (basketCount === 0) return;
-    
+    const schedule = getNairobiSchedule();
+    if (pickupDate < schedule.minDate) {
+      alert("Please choose " + schedule.minDate + " or a later pickup date. Same-day orders close at 9:00 AM EAT.");
+      setPickupDate(schedule.minDate);
+      return;
+    }
+    if (!pickupTime) {
+      alert("Please select a pickup time.");
+      return;
+    }
+    if (pickupDate === schedule.today && pickupTime <= schedule.currentTime) {
+      alert("Please choose a pickup time later than the current time in Kenya.");
+      return;
+    }
+
     setIsPlacingOrder(true);
     
     try {
       const order = await placeOrder(
         selectedPickup,
         selectedPayment,
-        notes
+        notes,
+        pickupDate,
+        pickupTime
       );
       
       setPlacedOrder(order);
       setOrderSuccess(true);
     } catch (error) {
       console.error("Failed to place order:", error);
-      alert("Failed to place order. Please try again.");
+      alert(error?.message || "Failed to place order. Please try again.");
     } finally {
       setIsPlacingOrder(false);
     }
@@ -117,6 +151,7 @@ export default function CheckoutPage() {
                 <div>
                   <strong>Pickup location</strong>
                   <p>{pickupLocations.find(l => l.id === selectedPickup)?.name}</p>
+                  <p>{placedOrder.pickupDate} at {placedOrder.pickupTime}</p>
                 </div>
               </div>
 
@@ -209,6 +244,21 @@ export default function CheckoutPage() {
                     {selectedPickup === location.id && <div className="selected-indicator">✓</div>}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            <div className="checkout-section">
+              <h2>Pickup date & time</h2>
+              <p className="mb-4 text-sm text-gray-500">Place same-day orders before 9:00 AM East Africa Time. Orders after the cutoff are scheduled for the next day.</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-2 text-sm font-semibold">
+                  <span className="flex items-center gap-2"><CalendarDays size={16} /> Pickup date</span>
+                  <input className="rounded-xl border border-[#e5e6dc] bg-white px-4 py-3" type="date" min={getNairobiSchedule().minDate} value={pickupDate} onChange={(event) => setPickupDate(event.target.value)} required />
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-semibold">
+                  <span className="flex items-center gap-2"><Clock3 size={16} /> Pickup time</span>
+                  <input className="rounded-xl border border-[#e5e6dc] bg-white px-4 py-3" type="time" value={pickupTime} onChange={(event) => setPickupTime(event.target.value)} required />
+                </label>
               </div>
             </div>
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
-import { meals } from "@/data/meals";
 import { defaultUser } from "@/data/user";
 import { useOrder } from "@/lib/OrderContext";
 import Sidebar from "@/app/components/navigation/Sidebar";
@@ -21,7 +20,8 @@ export default function Home() {
     updateBasketQuantity, 
     getBasketTotal, 
     getBasketCount,
-    currentOrder 
+    currentOrder,
+    menuItems,
   } = useOrder();
 
   const handleAddToBasket = (mealId) => {
@@ -81,13 +81,13 @@ export default function Home() {
         <section className="section-heading">
           <div>
             <p className="eyebrow">FROM THE KITCHEN</p>
-            <h2>Today&apos;s menu <span>· {meals.length} choices</span></h2>
+            <h2>Today&apos;s menu <span>· {menuItems.length} choices</span></h2>
           </div>
           <Link href="/menu" className="text-button">View all <ArrowRight size={15} /></Link>
         </section>
         
         <MealGrid 
-          meals={meals.slice(0, 3)}
+          meals={menuItems.slice(0, 3)}
           basket={basket}
           onAdd={handleAddToBasket}
           onUpdateQuantity={handleUpdateQuantity}
