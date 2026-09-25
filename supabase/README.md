@@ -34,3 +34,14 @@ Alternatively, run the SQL files in `migrations/` in timestamp order using the S
 - Customer order creation and payment writes are intentionally not granted as direct table writes. Implement them through a trusted server-side route or database function that validates menu prices, stock, the 09:00 cutoff, pickup slot capacity, and payment status.
 - Never put the Supabase service-role key in a `NEXT_PUBLIC_*` variable or browser code.
 - New accounts receive the `customer` role. Assign staff roles only through a trusted administrator process; do not let users set their own role.
+
+
+## Phase 4: live menu and order flow
+
+- The homepage and menu page read active menu rows from `public.menu_items`, with the local starter menu retained as a development fallback when Supabase is not configured or the query fails.
+- Checkout requires a signed-in Supabase user and submits to `POST /api/orders`.
+- The API verifies the user's bearer token and calls `public.create_customer_order`, which calculates prices from database rows, validates pickup scheduling/payment selection, and writes the order and line items atomically.
+- `GET /api/orders` returns only the signed-in customer's order history. Row Level Security remains enabled.
+- Apply the new `20260925000300_secure_order_creation.sql` migration before using live ordering.
+
+Inventory quantities are checked when present but are not decremented/reserved by this phase. M-Pesa initiation/callback handling and staff order-status management remain future work. The browser basket is still stored locally.
