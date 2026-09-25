@@ -133,14 +133,14 @@ export const OrderProvider = ({ children }) => {
     return Object.values(basket).reduce((sum, quantity) => sum + quantity, 0);
   };
 
-  const placeOrder = (pickupLocation, paymentMethod, notes = "") => {
+  const placeOrder = (pickupLocation, paymentMethod, notes = "", pickupDate = null, pickupTime = null) => {
     const basketItems = getBasketItems();
     
     if (basketItems.length === 0) {
       throw new Error("Basket is empty");
     }
 
-    const newOrder = createOrder(basketItems, pickupLocation, paymentMethod);
+    const newOrder = createOrder(basketItems, pickupLocation, paymentMethod, pickupDate, pickupTime);
     newOrder.notes = notes;
     
     setOrders((prev) => [newOrder, ...prev]);

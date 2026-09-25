@@ -38,7 +38,7 @@ export const generateOrderId = () => {
   return `${prefix}-${number}`;
 };
 
-export const createOrder = (items, pickupLocation, paymentMethod) => {
+export const createOrder = (items, pickupLocation, paymentMethod, pickupDate = null, pickupTime = null) => {
   return {
     id: generateOrderId(),
     items: items.map(item => ({
@@ -50,6 +50,9 @@ export const createOrder = (items, pickupLocation, paymentMethod) => {
     })),
     total: items.reduce((sum, item) => sum + (item.meal.price * item.quantity), 0),
     pickupLocation,
+    pickupDate,
+    pickupTime,
+    pickupDateTime: pickupDate && pickupTime ? pickupDate + "T" + pickupTime + ":00+03:00" : null,
     paymentMethod,
     status: orderStatuses.CONFIRMED,
     createdAt: new Date().toISOString(),
