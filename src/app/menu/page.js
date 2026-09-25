@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Search, ArrowRight } from "lucide-react";
-import { meals, mealCategories } from "@/data/meals";
+import { mealCategories } from "@/data/meals";
 import { useOrder } from "@/lib/OrderContext";
 import Sidebar from "@/app/components/navigation/Sidebar";
 import MobileNav from "@/app/components/navigation/MobileNav";
@@ -13,7 +13,7 @@ import BasketBar from "@/app/components/orders/BasketBar";
 export default function MenuPage() {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const { basket, addToBasket, updateBasketQuantity, getBasketTotal, getBasketCount } = useOrder();
+  const { basket, menuItems, addToBasket, updateBasketQuantity, getBasketTotal, getBasketCount } = useOrder();
 
   const handleAddToBasket = (mealId) => {
     addToBasket(mealId, 1);
@@ -23,7 +23,7 @@ export default function MenuPage() {
     updateBasketQuantity(mealId, quantity);
   };
 
-  const filteredMeals = meals.filter((meal) => {
+  const filteredMeals = menuItems.filter((meal) => {
     const matchesCategory = selectedCategory === "all" || 
       meal.category.toLowerCase().includes(selectedCategory.toLowerCase());
     
@@ -48,7 +48,7 @@ export default function MenuPage() {
           <div>
             <p className="eyebrow">EXPLORE OPTIONS</p>
             <h1>Today&apos;s menu</h1>
-            <p className="subhead">Choose from {meals.length} delicious meals prepared fresh daily.</p>
+            <p className="subhead">Choose from {menuItems.length} delicious meals prepared fresh daily.</p>
           </div>
         </section>
 
