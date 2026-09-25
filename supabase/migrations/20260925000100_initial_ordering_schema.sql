@@ -127,7 +127,17 @@ create index if not exists order_items_order_idx on public.order_items(order_id)
 create index if not exists payments_order_idx on public.payments(order_id);
 create index if not exists pickup_slots_date_idx on public.pickup_slots(pickup_date, start_time);
 
--- Staff helper is SECURITY DEFINER to avoid recursive profile RLS evaluation.
+-- SECURITY DEFINER helpers avoid recursive profile RLS evaluation.
+create or replace function public.current_user_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $
+  select role from public.profiles where id = auth.uid();
+$;
+
 create or replace function public.is_staff()
 returns boolean
 language sql
@@ -158,7 +168,7 @@ create policy "Profiles can read own profile or staff can read all"
 drop policy if exists "Users can update own basic profile" on public.profiles;
 create policy "Users can update own basic profile"
   on public.profiles for update to authenticated
-  using (id = auth.uid()) with check (id = auth.uid());
+  using (id = auth.uid()) with check (id = auth.uid() and role = public.current_user_role());
 
 drop policy if exists "Anyone can view available menu items" on public.menu_items;
 create policy "Anyone can view available menu items"
