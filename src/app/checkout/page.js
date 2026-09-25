@@ -82,7 +82,7 @@ export default function CheckoutPage() {
       setOrderSuccess(true);
     } catch (error) {
       console.error("Failed to place order:", error);
-      alert("Failed to place order. Please try again.");
+      alert(error?.message || "Failed to place order. Please try again.");
     } finally {
       setIsPlacingOrder(false);
     }
