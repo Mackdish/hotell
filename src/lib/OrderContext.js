@@ -2,12 +2,39 @@
 
 import { createContext, useContext, useState, useEffect } from "react";
 import { meals } from "@/data/meals";
-import { createOrder, orderStatuses } from "@/data/orders";
+import { createOrder, orderStatuses, pickupLocations } from "@/data/orders";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const OrderContext = createContext();
-
 const BASKET_STORAGE_KEY = "plate_basket";
 const ORDERS_STORAGE_KEY = "plate_orders";
+
+function mapDatabaseOrder(row) {
+  const location = Array.isArray(row.pickup_locations) ? row.pickup_locations[0] : row.pickup_locations;
+  const items = row.items || row.order_items || [];
+  return {
+    id: row.order_number || row.id,
+    databaseId: row.id,
+    items: items.map((item) => ({
+      mealName: item.mealName || item.item_name,
+      quantity: Number(item.quantity),
+      price: Number(item.price ?? item.unit_price),
+      totalPrice: Number(item.totalPrice ?? item.line_total),
+    })),
+    total: Number(row.total),
+    pickupLocation: row.pickup_location || location?.name || "Pickup location",
+    pickupDate: row.pickup_date,
+    pickupTime: String(row.pickup_time || "").slice(0, 5),
+    pickupDateTime: row.pickup_datetime || null,
+    paymentMethod: row.payment_method === "mpesa" ? "mpesa" : "pickup",
+    paymentStatus: row.payment_status,
+    status: row.status,
+    createdAt: row.created_at,
+    actualReadyTime: row.ready_at || row.preparing_at || null,
+    collectedAt: row.collected_at || null,
+    notes: row.notes || "",
+  };
+}
 
 export const OrderProvider = ({ children }) => {
   const [basket, setBasket] = useState({});
@@ -15,78 +42,77 @@ export const OrderProvider = ({ children }) => {
   const [currentOrder, setCurrentOrder] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from localStorage on mount
   useEffect(() => {
-    const savedBasket = localStorage.getItem(BASKET_STORAGE_KEY);
-    const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
-    
-    let initialBasket = {};
-    let initialOrders = [];
-    let initialCurrentOrder = null;
-    
-    if (savedBasket) {
+    let active = true;
+
+    async function loadInitialState() {
+      let initialBasket = {};
+      let initialOrders = [];
+
       try {
-        initialBasket = JSON.parse(savedBasket);
-      } catch (e) {
-        console.error("Failed to parse basket from localStorage:", e);
+        const savedBasket = localStorage.getItem(BASKET_STORAGE_KEY);
+        if (savedBasket) initialBasket = JSON.parse(savedBasket);
+      } catch (error) {
+        console.error("Failed to load basket:", error);
       }
-    }
-    
-    if (savedOrders) {
+
       try {
-        initialOrders = JSON.parse(savedOrders);
-        // Set the most recent active order as current
-        const activeOrder = initialOrders.find(
-          (order) => order.status !== orderStatuses.COLLECTED && order.status !== orderStatuses.CANCELLED
-        );
-        if (activeOrder) {
-          initialCurrentOrder = activeOrder;
+        const supabase = getSupabaseBrowserClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const response = await fetch("/api/orders", {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+            cache: "no-store",
+          });
+          const result = await response.json();
+          if (response.ok && Array.isArray(result.orders)) {
+            initialOrders = result.orders.map(mapDatabaseOrder);
+          } else if (!response.ok) {
+            console.warn("Could not load orders from Supabase:", result.error);
+          }
+        } else {
+          const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
+          if (savedOrders) initialOrders = JSON.parse(savedOrders);
         }
-      } catch (e) {
-        console.error("Failed to parse orders from localStorage:", e);
+      } catch (error) {
+        // Supabase env may not be configured during local UI prototyping.
+        try {
+          const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
+          if (savedOrders) initialOrders = JSON.parse(savedOrders);
+        } catch {}
+        console.warn("Could not load Supabase order history:", error);
       }
-    }
-    
-    // Batch state updates to avoid cascading renders
-    const updateState = () => {
+
+      if (!active) return;
+      const current = initialOrders.find(
+        (order) => order.status !== orderStatuses.COLLECTED && order.status !== orderStatuses.CANCELLED
+      ) || null;
       setBasket(initialBasket);
       setOrders(initialOrders);
-      setCurrentOrder(initialCurrentOrder);
+      setCurrentOrder(current);
       setIsLoaded(true);
-    };
-    
-    // Use requestAnimationFrame to defer state updates
-    requestAnimationFrame(updateState);
+    }
+
+    loadInitialState();
+    return () => { active = false; };
   }, []);
 
-  // Save basket to localStorage whenever it changes
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem(BASKET_STORAGE_KEY, JSON.stringify(basket));
-    }
+    if (isLoaded) localStorage.setItem(BASKET_STORAGE_KEY, JSON.stringify(basket));
   }, [basket, isLoaded]);
 
-  // Save orders to localStorage whenever they change
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
-    }
+    if (isLoaded) localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
   }, [orders, isLoaded]);
 
   const addToBasket = (mealId, quantity = 1) => {
     setBasket((prev) => {
-      const currentQuantity = prev[mealId] || 0;
-      const newQuantity = currentQuantity + quantity;
-      
-      if (newQuantity <= 0) {
+      const next = (prev[mealId] || 0) + quantity;
+      if (next <= 0) {
         const { [mealId]: removed, ...rest } = prev;
         return rest;
       }
-      
-      return {
-        ...prev,
-        [mealId]: newQuantity,
-      };
+      return { ...prev, [mealId]: next };
     });
   };
 
@@ -103,98 +129,79 @@ export const OrderProvider = ({ children }) => {
         const { [mealId]: removed, ...rest } = prev;
         return rest;
       }
-      
-      return {
-        ...prev,
-        [mealId]: quantity,
-      };
+      return { ...prev, [mealId]: quantity };
     });
   };
 
-  const clearBasket = () => {
-    setBasket({});
-  };
+  const clearBasket = () => setBasket({});
 
-  const getBasketItems = () => {
-    return Object.entries(basket).map(([mealId, quantity]) => ({
-      meal: meals.find((m) => m.id === parseInt(mealId)),
+  const getBasketItems = () =>
+    Object.entries(basket).map(([mealId, quantity]) => ({
+      meal: meals.find((meal) => meal.id === Number(mealId)),
       quantity,
-    })).filter(item => item.meal);
-  };
+    })).filter((item) => item.meal);
 
-  const getBasketTotal = () => {
-    return getBasketItems().reduce(
-      (sum, { meal, quantity }) => sum + meal.price * quantity,
-      0
-    );
-  };
+  const getBasketTotal = () => getBasketItems().reduce(
+    (sum, { meal, quantity }) => sum + meal.price * quantity, 0
+  );
 
-  const getBasketCount = () => {
-    return Object.values(basket).reduce((sum, quantity) => sum + quantity, 0);
-  };
+  const getBasketCount = () => Object.values(basket).reduce((sum, quantity) => sum + quantity, 0);
 
-  const placeOrder = (pickupLocation, paymentMethod, notes = "", pickupDate = null, pickupTime = null) => {
+  const placeOrder = async (pickupLocation, paymentMethod, notes = "", pickupDate = null, pickupTime = null) => {
     const basketItems = getBasketItems();
-    
-    if (basketItems.length === 0) {
-      throw new Error("Basket is empty");
-    }
+    if (!basketItems.length) throw new Error("Basket is empty.");
 
-    const newOrder = createOrder(basketItems, pickupLocation, paymentMethod, pickupDate, pickupTime);
-    newOrder.notes = notes;
-    
-    setOrders((prev) => [newOrder, ...prev]);
+    const supabase = getSupabaseBrowserClient();
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session?.access_token) throw new Error("Please sign in before placing an order.");
+
+    const location = pickupLocations.find((item) => item.id === pickupLocation);
+    if (!location) throw new Error("Choose a valid pickup location.");
+
+    const response = await fetch("/api/orders", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        items: basketItems.map(({ meal, quantity }) => ({ name: meal.name, quantity })),
+        pickupLocation: location.name,
+        paymentMethod,
+        pickupDate,
+        pickupTime,
+        notes,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to place order.");
+
+    const newOrder = mapDatabaseOrder(result.order);
+    setOrders((prev) => [newOrder, ...prev.filter((order) => order.databaseId !== newOrder.databaseId)]);
     setCurrentOrder(newOrder);
     clearBasket();
-    
     return newOrder;
   };
 
   const updateOrderStatus = (orderId, newStatus) => {
-    setOrders((prev) =>
-      prev.map((order) =>
-        order.id === orderId ? { ...order, status: newStatus } : order
-      )
-    );
-    
-    if (currentOrder?.id === orderId) {
-      setCurrentOrder((prev) => ({ ...prev, status: newStatus }));
-    }
+    setOrders((prev) => prev.map((order) => order.id === orderId ? { ...order, status: newStatus } : order));
+    if (currentOrder?.id === orderId) setCurrentOrder((prev) => ({ ...prev, status: newStatus }));
   };
 
-  const getOrderById = (orderId) => {
-    return orders.find((order) => order.id === orderId);
-  };
-
-  const getActiveOrders = () => {
-    return orders.filter(
-      (order) => order.status !== orderStatuses.COLLECTED && order.status !== orderStatuses.CANCELLED
-    );
-  };
-
-  const getPastOrders = () => {
-    return orders.filter(
-      (order) => order.status === orderStatuses.COLLECTED || order.status === orderStatuses.CANCELLED
-    );
-  };
+  const getOrderById = (orderId) => orders.find((order) => order.id === orderId);
+  const getActiveOrders = () => orders.filter(
+    (order) => order.status !== orderStatuses.COLLECTED && order.status !== orderStatuses.CANCELLED
+  );
+  const getPastOrders = () => orders.filter(
+    (order) => order.status === orderStatuses.COLLECTED || order.status === orderStatuses.CANCELLED
+  );
 
   const value = {
-    basket,
-    orders,
-    currentOrder,
-    isLoaded,
-    addToBasket,
-    removeFromBasket,
-    updateBasketQuantity,
-    clearBasket,
-    getBasketItems,
-    getBasketTotal,
-    getBasketCount,
-    placeOrder,
-    updateOrderStatus,
-    getOrderById,
-    getActiveOrders,
-    getPastOrders,
+    basket, orders, currentOrder, isLoaded, addToBasket, removeFromBasket,
+    updateBasketQuantity, clearBasket, getBasketItems, getBasketTotal,
+    getBasketCount, placeOrder, updateOrderStatus, getOrderById,
+    getActiveOrders, getPastOrders,
   };
 
   return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
@@ -202,8 +209,6 @@ export const OrderProvider = ({ children }) => {
 
 export const useOrder = () => {
   const context = useContext(OrderContext);
-  if (!context) {
-    throw new Error("useOrder must be used within an OrderProvider");
-  }
+  if (!context) throw new Error("useOrder must be used within an OrderProvider");
   return context;
 };
