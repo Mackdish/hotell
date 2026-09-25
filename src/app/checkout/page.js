@@ -6,6 +6,7 @@ import { ArrowRight, MapPin, CreditCard, Smartphone, Clock3, CalendarDays } from
 import { useOrder } from "@/lib/OrderContext";
 import { pickupLocations, paymentMethods } from "@/data/orders";
 import { defaultUser } from "@/data/user";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import Sidebar from "@/app/components/navigation/Sidebar";
 import MobileNav from "@/app/components/navigation/MobileNav";
 import Topbar from "@/app/components/navigation/Topbar";
@@ -42,6 +43,10 @@ export default function CheckoutPage() {
   const [pickupDate, setPickupDate] = useState(() => getNairobiSchedule().minDate);
   const [pickupTime, setPickupTime] = useState("12:30");
   const [notes, setNotes] = useState("");
+  const [paymentPhone, setPaymentPhone] = useState("");
+  const [paymentUrl, setPaymentUrl] = useState(null);
+  const [paymentMessage, setPaymentMessage] = useState("");
+  const [paymentError, setPaymentError] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [placedOrder, setPlacedOrder] = useState(null);
@@ -67,22 +72,58 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (selectedPayment === "mpesa" && !paymentPhone.trim()) {
+      alert("Enter the phone number to receive your M-Pesa prompt.");
+      return;
+    }
+
     setIsPlacingOrder(true);
-    
+    setPaymentError("");
+    setPaymentMessage("");
+    setPaymentUrl(null);
+    let createdOrder = null;
+
     try {
-      const order = await placeOrder(
+      createdOrder = await placeOrder(
         selectedPickup,
         selectedPayment,
         notes,
         pickupDate,
         pickupTime
       );
-      
-      setPlacedOrder(order);
+
+      if (selectedPayment === "mpesa") {
+        const supabase = getSupabaseBrowserClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) throw new Error("Order was placed, but your session expired. Sign in again to initiate payment.");
+
+        const response = await fetch("/api/payments/payza", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ orderNumber: createdOrder.id, phone: paymentPhone }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not start the PayzaAPI payment.");
+        setPaymentUrl(result.paymentUrl || null);
+        setPaymentMessage(result.message || "M-Pesa payment request sent. Check your phone and enter your PIN.");
+      } else {
+        setPaymentMessage("Your order is placed. Pay when you collect it.");
+      }
+
+      setPlacedOrder(createdOrder);
       setOrderSuccess(true);
     } catch (error) {
-      console.error("Failed to place order:", error);
-      alert(error?.message || "Failed to place order. Please try again.");
+      console.error("Failed to place order or start payment:", error);
+      if (createdOrder) {
+        setPlacedOrder(createdOrder);
+        setPaymentError(error?.message || "Your order was created but payment could not be started.");
+        setOrderSuccess(true);
+      } else {
+        alert(error?.message || "Failed to place order. Please try again.");
+      }
     } finally {
       setIsPlacingOrder(false);
     }
@@ -120,7 +161,7 @@ export default function CheckoutPage() {
           <Topbar />
           <section className="page-header">
             <div>
-              <p className="eyebrow">ORDER CONFIRMED</p>
+              <p className="eyebrow">{selectedPayment === "mpesa" && placedOrder.paymentStatus !== "paid" ? "ORDER AWAITING PAYMENT" : "ORDER CONFIRMED"}</p>
               <h1>Order #{placedOrder.id}</h1>
               <p className="subhead">Your order has been placed successfully!</p>
             </div>
@@ -129,8 +170,10 @@ export default function CheckoutPage() {
           <section className="order-confirmation">
             <div className="confirmation-card">
               <div className="success-icon">✓</div>
-              <h2>Order confirmed!</h2>
-              <p>Your order is being prepared and will be ready for pickup at the specified location.</p>
+              <h2>{selectedPayment === "mpesa" ? "Order placed — payment pending" : "Order confirmed!"}</h2>
+              <p>{paymentError || paymentMessage || (selectedPayment === "mpesa" ? "Complete the M-Pesa prompt to confirm your order." : "Your order is placed and will be ready for pickup at the specified location.")}</p>
+              {paymentUrl && <a className="primary-button inline-flex items-center justify-center" href={paymentUrl} target="_blank" rel="noreferrer">Open PayzaAPI checkout <ArrowRight size={16} /></a>}
+              {paymentError && selectedPayment === "mpesa" && <p className="text-sm text-amber-700">Your order reference is {placedOrder.id}. Contact the cafeteria before making another payment attempt.</p>}
               
               <div className="order-summary">
                 <h3>Order details</h3>
@@ -262,6 +305,23 @@ export default function CheckoutPage() {
               </div>
             </div>
 
+            {selectedPayment === "mpesa" && (
+              <div className="checkout-section">
+                <h2>M-Pesa phone number</h2>
+                <p className="mb-3 text-sm text-gray-500">Enter the Safaricom number that should receive the STK Push.</p>
+                <input
+                  className="w-full rounded-xl border border-[#e5e6dc] bg-white px-4 py-3"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="0712345678 or 254712345678"
+                  value={paymentPhone}
+                  onChange={(event) => setPaymentPhone(event.target.value)}
+                  required
+                />
+              </div>
+            )}
+
             <div className="checkout-section">
               <h2>Payment method</h2>
               <div className="payment-options">
@@ -316,7 +376,7 @@ export default function CheckoutPage() {
                 onClick={handlePlaceOrder}
                 disabled={isPlacingOrder}
               >
-                {isPlacingOrder ? "Placing order..." : "Place order"} <ArrowRight size={16} />
+                {isPlacingOrder ? "Placing order..." : selectedPayment === "mpesa" ? "Place order & pay with M-Pesa" : "Place order"} <ArrowRight size={16} />
               </button>
 
               <p className="terms-text">
